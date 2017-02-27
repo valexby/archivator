@@ -4,39 +4,53 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <limits.h>
+#include <stdlib.h>
 
-#define token 1024*1024*300
+#define TOKEN_SZ 300*1024*1024
+unsigned char buf[TOKEN_SZ];
 
-int main(int argc, char* argv[])
+int get_stat(long long *stat, char file_name[])
 {
-	int fd, i, j;
-	char buf[token];
-	size_t token_sz = token;
-	long long stat[256];
+	int i, j;
+	FILE *fd;
+	memset(stat, 0, sizeof(long long)*256);
 
-	memset(stat, 0, sizeof(stat));
+	fd = fopen(file_name, "rb");
 
-	if (argc != 2) 
+	while ((i = fread(buf, 1, TOKEN_SZ, fd)) && i > 0)
 	{
-		printf("wrong arguments\n");
-		return 1;
+		for (j = 0 ; j < i ; j++)
+		{
+			stat[(size_t)buf[j]]++;
+			if ((size_t)buf[j] > 255)
+				printf("%d\n", (int)buf[j]);
+		}
 	}
 
-	fd = open(argv[1], O_RDONLY);
-	if (fd < 0)
+	if ( fclose(fd) != 0 )
 	{
 		perror("archy");
 		return 1;
 	}
-	while ((i = read(fd, buf, token_sz)) && i >= 0)
+	return 0;
+}
+
+int main(int argc, char* argv[])
+{
+	long long *stat;
+	stat = (long long*) malloc(256*sizeof(long long));
+
+	/*if (argc != 2)
 	{
-		for (j = 0 ; j < i ; j++)
-			stat[(int)buf[j]]++;
+		printf("wrong arguments\n");
+		return 1;
+	}*/
+
+	if (get_stat(stat, "test.txt") == 1)
+	{
+		free(stat);
+		return 1;
 	}
-
-	perror("archy");
-
-	close(fd);
-
-	printf("%d %d %d\n", stat['h'], stat['H'], stat['l']);
+	free(stat);
+	return 0;
 }

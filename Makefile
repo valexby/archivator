@@ -1,6 +1,6 @@
 CC = gcc 
 CFLAGS = -c -Wall -Werror
-LDFLAGS =
+LDFLAGS = -g
 SOURCES = archy.c
 OBJECTS = $(SOURCES:.cpp=.o)
 EXECUTABLE = archy
