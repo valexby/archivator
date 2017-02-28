@@ -1,12 +1,19 @@
 #include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #include <string.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <stdbool.h>
+
+typedef struct
+{
+	void *right, *left;
+	unsigned char symbol;
+	bool is_symbol, separator;
+	long long weight;
+} root;
 
 #define TOKEN_SZ 300*1024*1024
+
 unsigned char buf[TOKEN_SZ];
 
 int get_stat(long long *stat, char file_name[])
@@ -35,6 +42,59 @@ int get_stat(long long *stat, char file_name[])
 	return 0;
 }
 
+int array_sum(long long *array, int size)
+{
+	long long sum = 0;
+	for (size -= 1; size >= 0; size--)
+		sum += array[0];
+	return sum;
+}
+
+int compare_long(const void *A, const void *B)
+{
+	long long a = *((long long*)A);
+	long long b = *((long long*)B);
+	if (a < b) return 1;
+	if (a == b) return 0;
+	if (a > b) return -1;
+}
+
+void make_tree(long long *stat)
+{
+	unsigned char i, size = 0;
+	root **leafs;
+	leafs = (root**)malloc(257 * sizeof(root*));
+	for (i = 255; i >= 0; i--)
+	{
+		if (stat[i] == 0) continue;
+		leafs[size] = (root*)malloc(sizeof(root));
+		(*(leafs[size])).right = NULL;
+		(*(leafs[size])).left = NULL;
+		(*(leafs[size])).symbol = i;
+		(*(leafs[size])).is_symbol = true;
+		(*(leafs[size])).separator = false;
+		(*(leafs[size])).weight = stat[i];
+		size++;
+	}
+	leafs[size] = (root*)malloc(sizeof(root));
+	(*(leafs[size])).right = NULL;
+	(*(leafs[size])).left = NULL;
+	(*(leafs[size])).symbol = size;
+	(*(leafs[size])).is_symbol = true;
+	(*(leafs[size])).separator = true;
+	(*(leafs[size])).weight = array_sum(stat, 256);
+	size++;
+	qsort(stat, 256, sizeof(long long), compare_long);
+}
+
+/* typedef struct
+{
+	void *right, *left;
+	unsigned char symbol;
+	bool is_symbol, separator;
+	long long weight;
+}
+ */
 int main(int argc, char* argv[])
 {
 	long long *stat;
