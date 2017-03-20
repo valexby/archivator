@@ -6,19 +6,23 @@
 
 #define TOKEN_SZ 300*1024*1024
 
-typedef struct
+typedef struct node node;
+
+struct node
 {
-	void *right, *left;
+	node *right, *left;
 	unsigned char symbol;
 	long long weight;
-} node;
+};
 
 int get_stat(long long *, char[]);
 int array_sum(long long *, int);
 int compare_leafs(const void *, const void *);
 
-void make_tree(const long long *);
+node* make_tree(const long long *);
 void find_minimal_nodes(int, node **);
+void print_tree(node*, int);
+void gree_tree(node*);
 
 int get_stat(long long *stat, char file_name[])
 {
@@ -88,10 +92,10 @@ void find_minimal_nodes(int size, node **nodes)
 	}
 }
 
-void make_tree(const long long *stat)
+node* make_tree(const long long *stat)
 {
 	unsigned char i, size = 0;
-	node **leafs;
+	node **leafs, *nooby;
 	leafs = malloc(256 * sizeof(node*));
 	i = 255;
 	
@@ -111,20 +115,50 @@ void make_tree(const long long *stat)
 		i--;
 	}
 	while (i != 255);
-	qsort(leafs, size, sizeof(long long), compare_leafs);
-	
-	node *temp = leafs[0];
-	leafs[0] = leafs[1];
-	leafs[1] = temp;
-	find_minimal_nodes(size, leafs);
+
+	while (size != 1)
+	{
+		find_minimal_nodes(size, leafs);
+		nooby = malloc(sizeof(node));
+		(*nooby).right = leafs[size - 2];
+		(*nooby).left = leafs[size - 1];
+		(*nooby).symbol = 255;
+		(*nooby).weight = (*(leafs[size - 1])).weight + (*(leafs[size - 2])).weight;
+		leafs[size - 1] = NULL;
+		leafs[size - 2] = nooby;
+		size--;
+	}
+	node *root = leafs[0];
+	free(leafs);
+	return root; 
 	/*for (i = 0; i < size; i++)
 		free(leafs[i]);
 	free(leafs);*/
 }
 
+void print_tree(node *root, int layer)
+{
+	int i;
+	if ((*root).left != NULL) print_tree((*root).left, layer + 1);
+	for (i = layer; i >= 0; i--)
+	{
+		printf("   ");
+	}
+	printf("%lld\n\n", (*root).weight);
+	if ((*root).right != NULL) print_tree((*root).right, layer + 1);
+}
+
+void free_tree(node *root)
+{
+	if ((*root).left != NULL) free_tree((*root).left);
+	if ((*root).right != NULL) free_tree((*root).right);
+	free(root);
+}
+
 int main(int argc, char* argv[])
 {
 	long long *stat;
+	node *root;
 	stat = malloc(256*sizeof(long long));
 
 	/*if (argc != 2)
@@ -133,17 +167,19 @@ int main(int argc, char* argv[])
 		return 1;
 	}*/
 
-	if (get_stat(stat, "gulliver.txt") == 1)
+	if (get_stat(stat, "test.txt") == 1)
 	{
 		free(stat);
 		exit(1);
 	}
+	root = make_tree(stat);
+	print_tree(root, 0);
+	free_tree(root);
 	int len = 0;
 	for (int i = 255; i >= 0; i--)
 		if (stat[i] != 0)
 			len ++;
 	printf("%d\n", len);
-	make_tree(stat);
 	free(stat);
 	return 0;
 }
