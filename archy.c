@@ -11,12 +11,14 @@ typedef struct
 	void *right, *left;
 	unsigned char symbol;
 	long long weight;
-} leaf;
+} node;
 
 int get_stat(long long *, char[]);
 int array_sum(long long *, int);
 int compare_leafs(const void *, const void *);
-void make_tree(long long *);
+
+void make_tree(const long long *);
+void find_minimal_nodes(int, node **);
 
 int get_stat(long long *stat, char file_name[])
 {
@@ -54,18 +56,45 @@ int array_sum(long long *array, int size)
 
 int compare_leafs(const void *A, const void *B)
 {
-	leaf* a = *((leaf**)A);
-	leaf* b = *((leaf**)B);
+	node* a = *((node**)A);
+	node* b = *((node**)B);
 	if ((*a).weight > (*b).weight) return 1;
 	return -1;
 }
 
-void make_tree(long long *stat)
+void find_minimal_nodes(int size, node **nodes)
+{
+	unsigned char min;
+	int mins[] = {-1, -1}, j, i;
+	
+	for (i = 0; i < 2; i++)
+	{
+		min = mins[0] == 0 ? (*(nodes[1])).weight : (*(nodes[0])).weight;
+		mins[i] = mins[0] == 0 ? 1 : 0 ;
+		for (j = 0; j < size; j++)
+		{
+			if ((*(nodes[j])).weight < min && j != mins[0]) // checks we don't get two similar minimals
+			{
+				min = (*(nodes[j])).weight;
+				mins[i] = j;
+			}
+		}
+	}
+	for (i = 0; i < 2; i++)
+	{
+		node *temp = nodes[mins[i]];
+		nodes[mins[i]] = nodes[size - (i + 1)];
+		nodes[size - (i + 1)] = temp;
+	}
+}
+
+void make_tree(const long long *stat)
 {
 	unsigned char i, size = 0;
-	leaf **leafs;
-	leafs = malloc(256 * sizeof(leaf*));
+	node **leafs;
+	leafs = malloc(256 * sizeof(node*));
 	i = 255;
+	
 	do
 	{
 		if (stat[i] == 0) 
@@ -73,7 +102,7 @@ void make_tree(long long *stat)
 			i--;
 			continue;
 		}
-		leafs[size] = malloc(sizeof(leaf));
+		leafs[size] = malloc(sizeof(node));
 		(*(leafs[size])).right = NULL;
 		(*(leafs[size])).left = NULL;
 		(*(leafs[size])).symbol = i;
@@ -83,9 +112,14 @@ void make_tree(long long *stat)
 	}
 	while (i != 255);
 	qsort(leafs, size, sizeof(long long), compare_leafs);
-	for (i = 0; i < size; i++)
+	
+	node *temp = leafs[0];
+	leafs[0] = leafs[1];
+	leafs[1] = temp;
+	find_minimal_nodes(size, leafs);
+	/*for (i = 0; i < size; i++)
 		free(leafs[i]);
-	free(leafs);
+	free(leafs);*/
 }
 
 int main(int argc, char* argv[])
