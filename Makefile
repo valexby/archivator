@@ -1,16 +1,16 @@
 CC = gcc 
-CFLAGS = -c -Wall -Werror
-LDFLAGS = -g
-SOURCES = archy.c
-OBJECTS = $(SOURCES:.cpp=.o)
+CFLAGS = -g -c -Wall -Werror
+LDFLAGS = 
+SOURCES = $(wildcard *.c)
+OBJECTS = $(SOURCES:.c=.o)
 EXECUTABLE = archy
 
 all: $(SOURCES) $(EXECUTABLE)
-	
+
 $(EXECUTABLE): $(OBJECTS) 
 	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
 
-.cpp.o:
+.c.o:
 	$(CC) $(CFLAGS) $< -o $@
 
 .PHONY: clean

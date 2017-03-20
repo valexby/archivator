@@ -4,22 +4,25 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#define TOKEN_SZ 300*1024*1024
+
 typedef struct
 {
 	void *right, *left;
 	unsigned char symbol;
-	bool is_symbol, separator;
 	long long weight;
-} root;
+} leaf;
 
-#define TOKEN_SZ 300*1024*1024
-
-unsigned char buf[TOKEN_SZ];
+int get_stat(long long *, char[]);
+int array_sum(long long *, int);
+int compare_leafs(const void *, const void *);
+void make_tree(long long *);
 
 int get_stat(long long *stat, char file_name[])
 {
 	int i, j;
 	FILE *fd;
+	unsigned char *buf = malloc(TOKEN_SZ*sizeof(unsigned char));
 	memset(stat, 0, sizeof(long long)*256);
 
 	fd = fopen(file_name, "rb");
@@ -29,11 +32,10 @@ int get_stat(long long *stat, char file_name[])
 		for (j = 0 ; j < i ; j++)
 		{
 			stat[(size_t)buf[j]]++;
-			if ((size_t)buf[j] > 255)
-				printf("%d\n", (int)buf[j]);
 		}
 	}
 
+	free(buf);
 	if ( fclose(fd) != 0 )
 	{
 		perror("archy");
@@ -50,55 +52,46 @@ int array_sum(long long *array, int size)
 	return sum;
 }
 
-int compare_long(const void *A, const void *B)
+int compare_leafs(const void *A, const void *B)
 {
-	long long a = *((long long*)A);
-	long long b = *((long long*)B);
-	if (a < b) return 1;
-	if (a == b) return 0;
-	if (a > b) return -1;
+	leaf* a = *((leaf**)A);
+	leaf* b = *((leaf**)B);
+	if ((*a).weight > (*b).weight) return 1;
+	return -1;
 }
 
 void make_tree(long long *stat)
 {
 	unsigned char i, size = 0;
-	root **leafs;
-	leafs = (root**)malloc(257 * sizeof(root*));
-	for (i = 255; i >= 0; i--)
+	leaf **leafs;
+	leafs = malloc(256 * sizeof(leaf*));
+	i = 255;
+	do
 	{
-		if (stat[i] == 0) continue;
-		leafs[size] = (root*)malloc(sizeof(root));
+		if (stat[i] == 0) 
+		{
+			i--;
+			continue;
+		}
+		leafs[size] = malloc(sizeof(leaf));
 		(*(leafs[size])).right = NULL;
 		(*(leafs[size])).left = NULL;
 		(*(leafs[size])).symbol = i;
-		(*(leafs[size])).is_symbol = true;
-		(*(leafs[size])).separator = false;
 		(*(leafs[size])).weight = stat[i];
 		size++;
+		i--;
 	}
-	leafs[size] = (root*)malloc(sizeof(root));
-	(*(leafs[size])).right = NULL;
-	(*(leafs[size])).left = NULL;
-	(*(leafs[size])).symbol = size;
-	(*(leafs[size])).is_symbol = true;
-	(*(leafs[size])).separator = true;
-	(*(leafs[size])).weight = array_sum(stat, 256);
-	size++;
-	qsort(stat, 256, sizeof(long long), compare_long);
+	while (i != 255);
+	qsort(leafs, size, sizeof(long long), compare_leafs);
+	for (i = 0; i < size; i++)
+		free(leafs[i]);
+	free(leafs);
 }
 
-/* typedef struct
-{
-	void *right, *left;
-	unsigned char symbol;
-	bool is_symbol, separator;
-	long long weight;
-}
- */
 int main(int argc, char* argv[])
 {
 	long long *stat;
-	stat = (long long*) malloc(256*sizeof(long long));
+	stat = malloc(256*sizeof(long long));
 
 	/*if (argc != 2)
 	{
@@ -106,11 +99,17 @@ int main(int argc, char* argv[])
 		return 1;
 	}*/
 
-	if (get_stat(stat, "test.txt") == 1)
+	if (get_stat(stat, "gulliver.txt") == 1)
 	{
 		free(stat);
-		return 1;
+		exit(1);
 	}
+	int len = 0;
+	for (int i = 255; i >= 0; i--)
+		if (stat[i] != 0)
+			len ++;
+	printf("%d\n", len);
+	make_tree(stat);
 	free(stat);
 	return 0;
 }
