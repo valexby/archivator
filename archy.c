@@ -15,16 +15,18 @@ struct node
 	long long weight;
 };
 
-int get_stat(long long *, char[]);
+int get_stat(long long *, const char[]);
 int array_sum(long long *, int);
 int compare_leafs(const void *, const void *);
 
 node* make_tree(const long long *);
 void find_minimal_nodes(int, node **);
 void print_tree(node*, int);
-void gree_tree(node*);
+void free_tree(node*);
+void get_huffman_codes(node *, unsigned char[256], int[256], unsigned char, int);
+void save_stat(const long long *, const char[]);
 
-int get_stat(long long *stat, char file_name[])
+int get_stat(long long *stat, const char file_name[])
 {
 	int i, j;
 	FILE *fd;
@@ -92,6 +94,60 @@ void find_minimal_nodes(int size, node **nodes)
 	}
 }
 
+void save_stat(const long long *stat, const char file_name[])
+{
+	int i;
+	unsigned char size = 0;
+	FILE *fd;
+	
+	for (i = 0; i < 256; i++)
+		if (stat[i] != 0) size++;
+
+	fd = fopen(file_name, "w");
+	if (fd == NULL)
+	{
+		perror("save_stat");
+		return;
+	}
+
+	fwrite(&size, sizeof(unsigned char), 1, fd);
+	for (i = 0; i < 256; i++)
+	{
+		if (stat[i] != 0)
+		{
+			size = i;
+			fwrite(&size, sizeof(unsigned char), 1, fd);
+			fwrite(&(stat[i]), sizeof(long long), 1, fd);
+		}
+	}
+	fclose(fd);
+	
+}
+
+void load_stat(long long *stat, const char file_name[])
+{
+	int i;
+	unsigned char size = 0, buf;
+	FILE *fd;
+
+	memset(stat, 0, sizeof(long long) * 256);
+	
+	fd = fopen(file_name, "rb");
+	if (fd == NULL)
+	{
+		perror("save_stat");
+		return;
+	}
+
+	fread(&size, sizeof(unsigned char), 1, fd);
+	for (i = size; i > 0; i--)
+	{
+		fread(&buf, sizeof(unsigned char), 1, fd);
+		fread(&(stat[buf]), sizeof(long long), 1, fd);
+	}
+	fclose(fd);
+}
+
 node* make_tree(const long long *stat)
 {
 	unsigned char i, size = 0;
@@ -148,6 +204,17 @@ void print_tree(node *root, int layer)
 	if ((*root).right != NULL) print_tree((*root).right, layer + 1);
 }
 
+void get_huffman_codes(node *root, unsigned char codes[256], int sizes[256], unsigned char code, int size)
+{
+	if ((*root).left != NULL) get_huffman_codes((*root).left, codes, sizes, code, size + 1);
+	if ((*root).right != NULL) get_huffman_codes((*root).right, codes, sizes, code | (1 << size), size + 1);
+	if ((*root).left == NULL && (*root).right == NULL)
+	{
+		codes[(*root).symbol] = code;
+		sizes[(*root).symbol] = size;
+	}
+}
+
 void free_tree(node *root)
 {
 	if ((*root).left != NULL) free_tree((*root).left);
@@ -157,29 +224,27 @@ void free_tree(node *root)
 
 int main(int argc, char* argv[])
 {
-	long long *stat;
+	int sizes[256] = {0};
+       	unsigned char codes[256] = {0};
+	long long *stat, *stat2;
 	node *root;
 	stat = malloc(256*sizeof(long long));
+	stat2 = malloc(256*sizeof(long long));
 
-	/*if (argc != 2)
-	{
-		printf("wrong arguments\n");
-		return 1;
-	}*/
-
-	if (get_stat(stat, "test.txt") == 1)
+	if (get_stat(stat, "gulliver.txt") == 1)
 	{
 		free(stat);
 		exit(1);
 	}
 	root = make_tree(stat);
-	print_tree(root, 0);
+	//print_tree(root, 0);
+	get_huffman_codes(root, codes, sizes, 0, 0);
 	free_tree(root);
-	int len = 0;
-	for (int i = 255; i >= 0; i--)
-		if (stat[i] != 0)
-			len ++;
-	printf("%d\n", len);
+	save_stat(stat, "test.out");
+	load_stat(stat2, "test.out");
+	for (int i = 0; i < 256; i++)
+		if (stat[i] != stat2[i]) printf("%d failed!\n", i);
 	free(stat);
+	free(stat2);
 	return 0;
 }
