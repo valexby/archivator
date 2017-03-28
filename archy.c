@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 #define TOKEN_SZ 300*1024*1024
+#define SET_BIT(dest, offset) ((dest) | (1 << offset))
 
 typedef struct node node;
 
@@ -15,7 +16,7 @@ struct node
 	long long weight;
 };
 
-int get_stat(long long *, const char[]);
+int get_stat(long long *, FILE*);
 int array_sum(long long *, int);
 int compare_leafs(const void *, const void *);
 
@@ -23,17 +24,16 @@ node* make_tree(const long long *);
 void find_minimal_nodes(int, node **);
 void print_tree(node*, int);
 void free_tree(node*);
-void get_huffman_codes(node *, unsigned char[256], int[256], unsigned char, int);
-void save_stat(const long long *, const char[]);
+void get_huffman_codes_wrapped(node *, bool*[256], int[256], bool[256], int);
+void get_huffman_codes(node *, bool* [256], int[256]);
+void save_stat(const long long *, FILE*);
+void load_stat(long long *, FILE*);
 
-int get_stat(long long *stat, const char file_name[])
+int get_stat(long long *stat, FILE *fd)
 {
 	int i, j;
-	FILE *fd;
 	unsigned char *buf = malloc(TOKEN_SZ*sizeof(unsigned char));
 	memset(stat, 0, sizeof(long long)*256);
-
-	fd = fopen(file_name, "rb");
 
 	while ((i = fread(buf, 1, TOKEN_SZ, fd)) && i > 0)
 	{
@@ -44,11 +44,6 @@ int get_stat(long long *stat, const char file_name[])
 	}
 
 	free(buf);
-	if ( fclose(fd) != 0 )
-	{
-		perror("archy");
-		return 1;
-	}
 	return 0;
 }
 
@@ -94,21 +89,13 @@ void find_minimal_nodes(int size, node **nodes)
 	}
 }
 
-void save_stat(const long long *stat, const char file_name[])
+void save_stat(const long long *stat, FILE *fd)
 {
 	int i;
 	unsigned char size = 0;
-	FILE *fd;
 	
 	for (i = 0; i < 256; i++)
 		if (stat[i] != 0) size++;
-
-	fd = fopen(file_name, "w");
-	if (fd == NULL)
-	{
-		perror("save_stat");
-		return;
-	}
 
 	fwrite(&size, sizeof(unsigned char), 1, fd);
 	for (i = 0; i < 256; i++)
@@ -120,24 +107,15 @@ void save_stat(const long long *stat, const char file_name[])
 			fwrite(&(stat[i]), sizeof(long long), 1, fd);
 		}
 	}
-	fclose(fd);
 	
 }
 
-void load_stat(long long *stat, const char file_name[])
+void load_stat(long long *stat, FILE* fd)
 {
 	int i;
 	unsigned char size = 0, buf;
-	FILE *fd;
 
 	memset(stat, 0, sizeof(long long) * 256);
-	
-	fd = fopen(file_name, "rb");
-	if (fd == NULL)
-	{
-		perror("save_stat");
-		return;
-	}
 
 	fread(&size, sizeof(unsigned char), 1, fd);
 	for (i = size; i > 0; i--)
@@ -145,7 +123,58 @@ void load_stat(long long *stat, const char file_name[])
 		fread(&buf, sizeof(unsigned char), 1, fd);
 		fread(&(stat[buf]), sizeof(long long), 1, fd);
 	}
-	fclose(fd);
+}
+
+
+void put_huff_code(const bool* code, int size, unsigned char* buf, int* indx_out, int* offset, FILE* fo)
+{
+	int indx_code;
+	for (indx_code = 0; indx_code < size; indx_code++)
+	{
+		if (code[indx_code]) 
+			buf[*indx_out] = SET_BIT(buf[*indx_out], *offset);
+		(*offset)++;
+		if (*offset == 8) 
+		{
+			*offset = 0;
+			(*indx_out)++;
+			if (*indx_out >= TOKEN_SZ)
+			{
+				if (fwrite(buf, sizeof(char), *indx_out, fo) != *indx_out)
+					perror("put_huff_code");
+				*indx_out = 0;
+			}
+		}
+	}
+}
+
+void make_archive(node* root, FILE* fi, FILE* fo)
+{
+	int sizes[256] = {0};
+       	bool* codes[256] = {0};
+	unsigned char *buf_in, *buf_out, sym;
+	int i, indx_in = 0, indx_out = 0, offset = 0;
+
+	get_huffman_codes(root, codes, sizes);
+
+	buf_in = malloc(TOKEN_SZ*sizeof(unsigned char));
+	buf_out = malloc(TOKEN_SZ*sizeof(unsigned char));
+
+	while ((i = fread(buf_in, 1, TOKEN_SZ, fi)) && i > 0)
+	{
+		for (indx_in = 0; indx_in < i; indx_in++)
+		{
+			sym = buf_in[indx_in];
+			put_huff_code(codes[sym], sizes[sym], buf_out, &indx_out, &offset, fo);		
+		}
+	}
+	if (fwrite(buf_out, sizeof(char), indx_out, fo) != indx_out)
+		perror("make_arch_write");
+
+	for (int i = 0; i < 256; i++)
+		free(codes[i]);
+	free(buf_in);
+	free(buf_out);
 }
 
 node* make_tree(const long long *stat)
@@ -204,14 +233,31 @@ void print_tree(node *root, int layer)
 	if ((*root).right != NULL) print_tree((*root).right, layer + 1);
 }
 
-void get_huffman_codes(node *root, unsigned char codes[256], int sizes[256], unsigned char code, int size)
+void get_huffman_codes(node *root, bool* codes[256], int sizes[256])
 {
-	if ((*root).left != NULL) get_huffman_codes((*root).left, codes, sizes, code, size + 1);
-	if ((*root).right != NULL) get_huffman_codes((*root).right, codes, sizes, code | (1 << size), size + 1);
+	bool buff[256];
+	get_huffman_codes_wrapped(root, codes, sizes, buff, 0);
+}
+
+void get_huffman_codes_wrapped(node *root, bool* codes[256], int sizes[256], bool buff[256], int size)
+{
 	if ((*root).left == NULL && (*root).right == NULL)
 	{
-		codes[(*root).symbol] = code;
-		sizes[(*root).symbol] = size;
+		unsigned char index = (*root).symbol;
+		codes[index] = malloc(sizeof(unsigned char) * size);
+		memcpy(codes[index], buff, size);
+		sizes[index] = size;
+		return;
+	}
+	if ((*root).left != NULL) 
+	{
+		buff[size] = true;
+		get_huffman_codes_wrapped((*root).left, codes, sizes, buff, size + 1);
+	}
+	if ((*root).right != NULL)
+	{
+		buff[size] = false;
+		get_huffman_codes_wrapped((*root).right, codes, sizes, buff, size + 1);
 	}
 }
 
@@ -224,27 +270,26 @@ void free_tree(node *root)
 
 int main(int argc, char* argv[])
 {
-	int sizes[256] = {0};
-       	unsigned char codes[256] = {0};
-	long long *stat, *stat2;
+	long long *stat;
 	node *root;
+	FILE *fi, *fo;
 	stat = malloc(256*sizeof(long long));
-	stat2 = malloc(256*sizeof(long long));
 
-	if (get_stat(stat, "gulliver.txt") == 1)
-	{
-		free(stat);
-		exit(1);
-	}
+	fi = fopen("test.txt", "rb");
+	if (fi == NULL) { perror("main"); exit(1);}
+	fo = fopen("test.out", "wb");
+	if (fo == NULL) { perror("main"); exit(1);}
+
+	get_stat(stat, fi);
 	root = make_tree(stat);
-	//print_tree(root, 0);
-	get_huffman_codes(root, codes, sizes, 0, 0);
+	save_stat(stat, fo);
+	if (fclose(fi) == EOF) {perror("main input close");}
+	fi = fopen("test.txt", "rb");
+	make_archive(root, fi, fo);
+
+	if (fclose(fi) == EOF) {perror("main input close");}
+	if (fclose(fo) == EOF) {perror("main output close");}
 	free_tree(root);
-	save_stat(stat, "test.out");
-	load_stat(stat2, "test.out");
-	for (int i = 0; i < 256; i++)
-		if (stat[i] != stat2[i]) printf("%d failed!\n", i);
 	free(stat);
-	free(stat2);
 	return 0;
 }
