@@ -5,7 +5,8 @@
 #include <stdbool.h>
 
 #define TOKEN_SZ 300*1024*1024
-#define SET_BIT(dest, offset) ((dest) | (1 << offset))
+#define SET_BIT(dest, offset) ((dest) | (1 << (offset)))
+#define GET_BIT(dest, offset) (((dest) >> (offset)) & 1)
 
 typedef struct node node;
 
@@ -31,13 +32,13 @@ void load_stat(long long *, FILE*);
 
 int get_stat(long long *stat, FILE *fd)
 {
-	int i, j;
+	int i;
 	unsigned char *buf = malloc(TOKEN_SZ*sizeof(unsigned char));
 	memset(stat, 0, sizeof(long long)*256);
 
 	while ((i = fread(buf, 1, TOKEN_SZ, fd)) && i > 0)
 	{
-		for (j = 0 ; j < i ; j++)
+		for (int j = 0 ; j < i ; j++)
 		{
 			stat[(size_t)buf[j]]++;
 		}
@@ -65,7 +66,7 @@ int compare_leafs(const void *A, const void *B)
 
 void find_minimal_nodes(int size, node **nodes)
 {
-	unsigned char min;
+	long long min;
 	int mins[] = {-1, -1}, j, i;
 	
 	for (i = 0; i < 2; i++)
@@ -91,20 +92,20 @@ void find_minimal_nodes(int size, node **nodes)
 
 void save_stat(const long long *stat, FILE *fd)
 {
-	int i;
-	unsigned char size = 0;
+	int size = 0;
 	
-	for (i = 0; i < 256; i++)
+	for (int i = 0; i < 256; i++)
 		if (stat[i] != 0) size++;
 
-	fwrite(&size, sizeof(unsigned char), 1, fd);
-	for (i = 0; i < 256; i++)
+	if (fwrite(&size, sizeof(size), 1, fd) != sizeof(size))
+		perror("save_stat");
+	for (int i = 0; i < 256; i++)
 	{
 		if (stat[i] != 0)
 		{
-			size = i;
-			fwrite(&size, sizeof(unsigned char), 1, fd);
-			fwrite(&(stat[i]), sizeof(long long), 1, fd);
+			unsigned char buf = i;
+			fwrite(&buf, sizeof(buf), 1, fd);
+			fwrite(&(stat[i]), sizeof(stat[i]), 1, fd);
 		}
 	}
 	
@@ -112,24 +113,23 @@ void save_stat(const long long *stat, FILE *fd)
 
 void load_stat(long long *stat, FILE* fd)
 {
-	int i;
-	unsigned char size = 0, buf;
+	unsigned char buf;
+	int size = 0;
 
 	memset(stat, 0, sizeof(long long) * 256);
 
-	fread(&size, sizeof(unsigned char), 1, fd);
-	for (i = size; i > 0; i--)
+	fread(&size, sizeof(size), 1, fd);
+	for (int i = size; i > 0; i--)
 	{
-		fread(&buf, sizeof(unsigned char), 1, fd);
-		fread(&(stat[buf]), sizeof(long long), 1, fd);
+		fread(&buf, sizeof(buf), 1, fd);
+		fread(&(stat[buf]), sizeof(stat[buf]), 1, fd);
 	}
 }
 
 
 void put_huff_code(const bool* code, int size, unsigned char* buf, int* indx_out, int* offset, FILE* fo)
 {
-	int indx_code;
-	for (indx_code = 0; indx_code < size; indx_code++)
+	for (int indx_code = 0; indx_code < size; indx_code++)
 	{
 		if (code[indx_code]) 
 			buf[*indx_out] = SET_BIT(buf[*indx_out], *offset);
@@ -143,30 +143,42 @@ void put_huff_code(const bool* code, int size, unsigned char* buf, int* indx_out
 				if (fwrite(buf, sizeof(char), *indx_out, fo) != *indx_out)
 					perror("put_huff_code");
 				*indx_out = 0;
+				memset(buf, 0, TOKEN_SZ);
 			}
 		}
 	}
 }
 
-void make_archive(node* root, FILE* fi, FILE* fo)
+void make_archive(node* root, FILE* fi, FILE* fo, long long *stat)
 {
 	int sizes[256] = {0};
        	bool* codes[256] = {0};
 	unsigned char *buf_in, *buf_out, sym;
 	int i, indx_in = 0, indx_out = 0, offset = 0;
+	long long total = 0;
 
 	get_huffman_codes(root, codes, sizes);
 
+	long long total_size = 0;
+	for (i = 0; i < 256; i++)
+	{
+		total_size += sizes[i] * stat[i]; 
+	}
+	printf("Total computed size %lld\n", total_size);
+
 	buf_in = malloc(TOKEN_SZ*sizeof(unsigned char));
 	buf_out = malloc(TOKEN_SZ*sizeof(unsigned char));
+	memset(buf_out, 0, TOKEN_SZ);
 
 	while ((i = fread(buf_in, 1, TOKEN_SZ, fi)) && i > 0)
 	{
 		for (indx_in = 0; indx_in < i; indx_in++)
 		{
 			sym = buf_in[indx_in];
-			put_huff_code(codes[sym], sizes[sym], buf_out, &indx_out, &offset, fo);		
+			put_huff_code(codes[sym], sizes[sym], buf_out, &indx_out, &offset, fo);
 		}
+		total += i;
+		printf("%lldMB\n", total / (1024*1024));
 	}
 	if (fwrite(buf_out, sizeof(char), indx_out, fo) != indx_out)
 		perror("make_arch_write");
@@ -177,9 +189,53 @@ void make_archive(node* root, FILE* fi, FILE* fo)
 	free(buf_out);
 }
 
+void decompress(node* root, FILE* fi, FILE* fo)
+{
+	unsigned char *buf_in, *buf_out, bit;
+	int i, indx_in = 0, indx_out = 0, offset = 0;
+	node* cur_pos = root;
+
+	buf_in = malloc(TOKEN_SZ*sizeof(unsigned char));
+	buf_out = malloc(TOKEN_SZ*sizeof(unsigned char));
+
+	while ((i = fread(buf_in, 1, TOKEN_SZ, fi)) && i > 0)
+	{
+		for (indx_in = 0; indx_in < i; indx_in++)
+		{
+			for (offset = 0; offset < 8; offset++)
+			{
+				bit = GET_BIT(buf_in[indx_in], offset);
+				if (bit == 1)
+					cur_pos = (*cur_pos).left;
+				else
+					cur_pos = (*cur_pos).right;
+				if (cur_pos == NULL) break;//Thrash in end of archive
+				if ((*cur_pos).left == NULL && (*cur_pos).right == NULL)
+				{
+					buf_out[indx_out] = (*cur_pos).symbol;
+					indx_out++;
+					cur_pos = root;
+					if (indx_out >= TOKEN_SZ)
+					{
+						int out = fwrite(buf_out, sizeof(char), indx_out, fo);
+					       	if (out != indx_out)
+							perror("put_huff_code");
+						indx_out = 0;
+					}
+				}
+			}
+		}
+	}
+	if (fwrite(buf_out, sizeof(char), indx_out, fo) != indx_out)
+		perror("put_huff_code");
+	free(buf_in);
+	free(buf_out);
+}
+
 node* make_tree(const long long *stat)
 {
-	unsigned char i, size = 0;
+	unsigned char i;
+	int size = 0;
 	node **leafs, *nooby;
 	leafs = malloc(256 * sizeof(node*));
 	i = 255;
@@ -215,10 +271,7 @@ node* make_tree(const long long *stat)
 	}
 	node *root = leafs[0];
 	free(leafs);
-	return root; 
-	/*for (i = 0; i < size; i++)
-		free(leafs[i]);
-	free(leafs);*/
+	return root;
 }
 
 void print_tree(node *root, int layer)
@@ -274,8 +327,9 @@ int main(int argc, char* argv[])
 	node *root;
 	FILE *fi, *fo;
 	stat = malloc(256*sizeof(long long));
+	printf("Started at %s\n", __TIME__);
 
-	fi = fopen("test.txt", "rb");
+	fi = fopen("film.avi", "rb");
 	if (fi == NULL) { perror("main"); exit(1);}
 	fo = fopen("test.out", "wb");
 	if (fo == NULL) { perror("main"); exit(1);}
@@ -284,8 +338,22 @@ int main(int argc, char* argv[])
 	root = make_tree(stat);
 	save_stat(stat, fo);
 	if (fclose(fi) == EOF) {perror("main input close");}
-	fi = fopen("test.txt", "rb");
-	make_archive(root, fi, fo);
+	fi = fopen("film.avi", "rb");
+	make_archive(root, fi, fo, stat);
+	printf("Compressed at %s\n", __TIME__);
+
+	if (fclose(fi) == EOF) {perror("main input close");}
+	if (fclose(fo) == EOF) {perror("main output close");}
+
+	fi = fopen("test.out", "rb");
+	if (fi == NULL) { perror("main"); exit(1);}
+	fo = fopen("out.avi", "wb");
+	if (fo == NULL) { perror("main"); exit(1);}
+
+	load_stat(stat, fi);
+	root = make_tree(stat);
+	decompress(root, fi, fo);
+	printf("Decompressed at %s\n", __TIME__);
 
 	if (fclose(fi) == EOF) {perror("main input close");}
 	if (fclose(fo) == EOF) {perror("main output close");}
