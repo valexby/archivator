@@ -1,6 +1,6 @@
 CC = gcc 
 CFLAGS = -g -c -Wall -Werror
-LDFLAGS = 
+LDFLAGS = -L util.o
 SOURCES = $(wildcard *.c)
 OBJECTS = $(SOURCES:.c=.o)
 EXECUTABLE = archy
