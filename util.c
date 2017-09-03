@@ -3,12 +3,6 @@
 #include <limits.h>
 #include <stdlib.h>
 
-#define TOKEN_SZ 300*1024*1024
-#define SET_BIT(dest, offset) ((dest) | (1 << (offset)))
-#define GET_BIT(dest, offset) (((dest) >> (offset)) & 1)
-
-void decode_byte(unsigned char, node*, node**, unsigned char*, int*, FILE*);
-
 struct node
 {
 	node *right, *left;

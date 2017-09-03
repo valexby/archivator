@@ -34,7 +34,6 @@ int main(int argc, char* argv[])
 			((fo = fopen(argv[3], "wb")) && fo == NULL))
        	{
 		printf("%s(%d): ", __FILE__, __LINE__);
-		perror(argv[2]);
 		exit(1); 
 	}
        	stat = malloc(256*sizeof(long long));
